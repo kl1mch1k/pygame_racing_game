@@ -65,17 +65,18 @@ class OutTrack(pygame.sprite.Sprite):
 
 
 class Track(pygame.sprite.Sprite):
-    def __init__(self, image_name, start_pos, checkpoints=None):
+    def __init__(self, image_name, start_pos=(0, 0), finish_rect=(0, 0, 0, 0), checkpoints=()):
         super().__init__(all_sprites)
         self.image = pygame.transform.scale(load_image(image_name), (3200, 3200))
         self.start_pos = start_pos
         self.rect = self.image.get_rect()
+        self.checkpoints = checkpoints
         self.mask = pygame.mask.from_surface(self.image)
         pygame.mask.Mask.invert(self.mask)
-        if checkpoints:
-            for checkpoint_pos in checkpoints:
-                checkpoints_sprites.add(CheckPoint(checkpoint_pos))
-
+        self.finish = FinishLine(finish_rect)
+    def create_checks(self):
+        for checkpoint_pos in self.checkpoints:
+            CheckPoint(checkpoint_pos, self)
 
 
 class Car(pygame.sprite.Sprite):
@@ -114,14 +115,22 @@ class Car(pygame.sprite.Sprite):
             self.vec += -self.inertion / FPS
         self.rect = self.image.get_rect(center=self.rect.center).move((self.vec.x, self.vec.y))
 
-class CheckPoint(pygame.sprite.Sprite):
-    image = load_image('checkpoint.png')
-    def __init__(self, pos):
-        super().__init__(all_sprites, checkpoints_sprites)
-        self.image = CheckPoint.image
-        self.mask = pygame.mask.from_surface(self.image)
-        self.rect = self.image.get_rect(center=pos)
 
+class CheckPoint(pygame.sprite.Sprite):
+    def __init__(self, pos, track, size=200):
+        super().__init__(all_sprites, checkpoints_sprites)
+        self.image = pygame.Surface((size, size))
+        self.image.set_colorkey((0, 0, 0))
+        pygame.draw.circle(self.image, (168, 68, 70), (size // 2, size // 2), size // 2)
+        self.mask = pygame.mask.from_surface(self.image)
+        self.rect = self.image.get_rect(center=pos[0])
+
+
+class FinishLine(pygame.sprite.Sprite):
+    def __init__(self, rect):
+        super().__init__(all_sprites)
+        self.image = pygame.Surface((rect[2], rect[3]))
+        self.rect = pygame.Rect(*rect)
 
 
 class Camera:
@@ -140,6 +149,7 @@ class Camera:
         self.dx = -(target.rect.x + target.rect.w // 2 - WIDTH // 2)
         self.dy = -(target.rect.y + target.rect.h // 2 - HEIGHT // 2)
 
+
 def show_text(screen, text, font, color, size, center_pos):
     font = pygame.font.Font('data/' + font, size)
     rendered_text = font.render(text, True, color)
@@ -148,11 +158,15 @@ def show_text(screen, text, font, color, size, center_pos):
     screen.blit(rendered_text, text_rect)
 
 
-
 def start_screen():
     grass = OutTrack()
-    track = Track('tr.png', (1900, 460), ((1230, 540), (1000, 1610), (620, 470), (450, 1860), (1400, 2730), 
-                                          (1950, 1860), (2525, 2720), (2720, 1525), (1610, 1280), (2770, 760)))
+    track = Track('tr.png', start_pos=(1900, 460),
+                  finish_rect=(1840, 270, 20, 400),
+                  checkpoints=((1230, 540), (1000, 1610), (620, 470),
+                               (450, 1860), (1400, 2730), (1950, 1860),
+                               (2525, 2720), (2720, 1525), (1610, 1280), (2770, 760)))
+    track.create_checks()
+
     car = Car(track.start_pos)
     camera = Camera()
 
@@ -161,9 +175,14 @@ def start_screen():
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 terminate()
-        for car in car_sprites:
-            for group in (all_sprites, checkpoints_sprites):
-                group.remove(pygame.sprite.spritecollideany(car, checkpoints_sprites))
+        if checkpoints_sprites.sprites():
+            cur_checkpoint_sprite = checkpoints_sprites.sprites()[0]
+            if pygame.sprite.collide_mask(car, cur_checkpoint_sprite):
+                all_sprites.remove(cur_checkpoint_sprite)
+                checkpoints_sprites.remove(cur_checkpoint_sprite)
+        elif pygame.sprite.collide_rect(track.finish, car):
+            print('Yes')
+            track.create_checks()
 
         if pygame.sprite.collide_mask(car, grass):
             car.vec += -car.max_speed * (car.vec.length // abs(car.vec.length))
@@ -175,6 +194,7 @@ def start_screen():
         camera.update(car)
         for sprite in all_sprites:
             camera.apply(sprite)
+
 
         all_sprites.draw(screen)
 
